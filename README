@@ -1,0 +1,3 @@
+This library provides SystemC CPUs.
+
+It can load shared libraries developped with TLM2C.
