@@ -1,3 +1,18 @@
 This library provides SystemC CPUs.
 
 It can load shared libraries developped with TLM2C.
+
+How to include this model in a project:
+
+* Copy the misc/FindSIMPLECPU.cmake in your project repository.
+* Add the following lines into your CMakeLists.txt:
+    FIND_PACKAGE(SIMPLECPU)
+    if(SIMPLECPU_FOUND)
+      INCLUDE_DIRECTORIES(${SIMPLECPU_INCLUDE_DIRS})
+      LINK_DIRECTORIES(${SIMPLECPU_LIBRARY_DIRS})
+    else()
+      MESSAGE(FATAL_ERROR "SIMPLECPU not found.")
+    endif()
+
+You're now able to use SimpleCPU headers and link the toplevel with
+SIMPLECPU_LIBRARIES.
