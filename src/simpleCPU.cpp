@@ -196,11 +196,11 @@ int SimpleCPU::memory_get_direct_mem_ptr(Payload *p, DMIData *d)
 void SimpleCPU::irq_b_transport(unsigned int port, irqPayload& payload,
 			                         sc_core::sc_time& time)
 {
-  int data = (*payload.get_data_ptr());
+  IRQ_ext_data *data = (IRQ_ext_data *)(payload.get_data_ptr());
 
   static GenericPayload *p = payload_create();
-  payload_set_address(p, port);
-  payload_set_value(p, data);
+  payload_set_address(p, data->irq_line);
+  payload_set_value(p, data->value);
   payload_set_command(p, WRITE);
   b_transport(this->initiatorSocket, (Payload *)p);
 }
