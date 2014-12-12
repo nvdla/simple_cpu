@@ -73,7 +73,6 @@ class SimpleCPU:
   TargetSocket *targetSocket;
   InitiatorSocket *initiatorSocket;
 
-  std::string getLibraryName();
   void additional_init();
 
   void notify(gs::gp::master_atom& tc) {};

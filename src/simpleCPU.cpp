@@ -122,11 +122,6 @@ void SimpleCPU::additional_init()
   tlm2c_bind(remote_initiator, this->targetSocket);
 }
 
-std::string SimpleCPU::getLibraryName()
-{
-  return std::string("libqbox-cortex-m3.so");
-}
-
 void SimpleCPU::memory_bt(Payload *payload)
 {
   /*
