@@ -80,5 +80,8 @@ class SimpleCPU:
 
   /* Kernel filename to be loaded by the CPU. */
   gs::gs_param<std::string> kernel;
+  gs::gs_param<std::string> dtb;
+  gs::gs_param<std::string> rootfs;
+  gs::gs_param<std::string> kernel_cmd;
 };
 

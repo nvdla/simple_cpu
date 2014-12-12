@@ -59,7 +59,10 @@ SimpleCPU::SimpleCPU(sc_core::sc_module_name name):
   TLM2CSCBridge(name),
   master_socket("iport"),
   irq_socket("interrupt_socket"),
-  kernel("kernel", "")
+  kernel("kernel", ""),
+  dtb("dtb", ""),
+  rootfs("rootfs", ""),
+  kernel_cmd("kernel_cmd", "")
 {
   master_socket.out_port(*this);
   /*
