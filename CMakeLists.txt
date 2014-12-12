@@ -82,6 +82,7 @@ set(CMAKE_CXX_FLAGS "-Wall -Werror -DSC_INCLUDE_DYNAMIC_PROCESSES")
 add_library(simplecpu SHARED
   src/simpleCPU.cpp
   src/tlm2CSCBridge.cpp
+  src/thread_safe_event.cpp
   )
 
 # Installation paths
