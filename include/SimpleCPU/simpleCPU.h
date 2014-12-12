@@ -42,6 +42,7 @@
 
 #include <systemc.h>
 #include "tlm2CSCBridge.h"
+#include "SimpleCPU/thread_safe_event.h"
 
 #include "greencontrol/config.h"
 #include "gsgpsocket/transport/GSGPMasterBlockingSocket.h"
@@ -53,6 +54,7 @@ class SimpleCPU:
   public TLM2CSCBridge,
   public gs::payload_event_queue_output_if<gs::gp::master_atom>
 {
+  SC_HAS_PROCESS(SimpleCPU);
   public:
   SimpleCPU(sc_core::sc_module_name name);
   ~SimpleCPU();
@@ -76,11 +78,54 @@ class SimpleCPU:
   void additional_init();
 
   void notify(gs::gp::master_atom& tc) {};
+  void end_of_elaboration();
 
   /* Kernel filename to be loaded by the CPU. */
   gs::gs_param<std::string> kernel;
   gs::gs_param<std::string> dtb;
   gs::gs_param<std::string> rootfs;
   gs::gs_param<std::string> kernel_cmd;
+
+  /* Transaction posting mechanism. */
+  transactionHandle transaction;      /*<! Transaction to be posted. */
+  bool transaction_pending;           /*<! CPU is waiting SystemC for a txn. */
+  void post_a_transaction();
+  void init_io();
+  void destroy_io();
+  pthread_mutex_t io_done_mtx;
+  pthread_cond_t io_done_cond;
+  bool io_completed;
+  void finish_io();
+  void wait_for_io_completion();
+  void do_io();
+  thread_safe_event io_evt;
+
+  /* Synchronisation mechanism. */
+  int systemc_running;                /*<! false when SystemC sleep. */
+  void init_systemc_sleep();
+  void wake_up_systemc();
+  void systemc_sleep();
+  void destroy_systemc_sleep();
+  pthread_mutex_t sc_sleep_mtx;
+  pthread_cond_t sc_sleep_cond;
+  void quantum_notify();
+  void end_of_quantum();
+  sc_event quantum_evt;
+  gs::gs_param<uint64_t> quantum;
+  volatile bool cpu_has_finished;
+  bool systemc_has_finished;
+  bool cpu_init;                      /*<! CPU mutexes initialised. */
+  /* CPU sleep. */
+  void init_cpu_sleep();
+  void wake_up_cpu();
+  void cpu_sleep();
+  void destroy_cpu_sleep();
+  int cpu_running;
+  pthread_mutex_t cpu_sleep_mtx;
+  pthread_cond_t cpu_sleep_cond;
+
+  /* dummy event. */
+  sc_event dummy_evt;
+  void dummy();
 };
 

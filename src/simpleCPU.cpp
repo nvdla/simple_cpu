@@ -62,7 +62,8 @@ SimpleCPU::SimpleCPU(sc_core::sc_module_name name):
   kernel("kernel", ""),
   dtb("dtb", ""),
   rootfs("rootfs", ""),
-  kernel_cmd("kernel_cmd", "")
+  kernel_cmd("kernel_cmd", ""),
+  quantum("quantum", 100000000)
 {
   master_socket.out_port(*this);
   /*
@@ -72,11 +73,26 @@ SimpleCPU::SimpleCPU(sc_core::sc_module_name name):
   cnf.use_mandatory_extension<IRQ_LINE_EXTENSION>();
   irq_socket.set_config(cnf);
   irq_socket.register_b_transport(this, &SimpleCPU::irq_b_transport);
+
+  SC_METHOD(quantum_notify);
+  sensitive << quantum_evt;
+  dont_initialize();
+  quantum_evt.notify(quantum, sc_core::SC_NS);
+
+  this->cpu_has_finished = false;
+  this->systemc_has_finished = false;
+  this->cpu_init = false;
+
+  init_io();
+  init_systemc_sleep();
+  init_cpu_sleep();
 }
 
 SimpleCPU::~SimpleCPU()
 {
-
+  destroy_io();
+  destroy_systemc_sleep();
+  destroy_cpu_sleep();
 }
 
 void SimpleCPU::additional_init()
@@ -122,6 +138,12 @@ void SimpleCPU::additional_init()
   tlm2c_bind(remote_initiator, this->targetSocket);
 }
 
+void SimpleCPU::end_of_elaboration()
+{
+  /* Create transaction. */
+  transaction = master_socket.create_transaction();
+}
+
 void SimpleCPU::memory_bt(Payload *payload)
 {
   /*
@@ -132,37 +154,33 @@ void SimpleCPU::memory_bt(Payload *payload)
   uint64_t value = payload_get_value(p);
   uint64_t size = payload_get_size(p);
   Command cmd = payload_get_command(p);
-
-  static transactionHandle tHandle = master_socket.create_transaction();
   gs::GSDataType::dtype data = gs::GSDataType::dtype((unsigned char *)&value,
                                                      size);
-  tHandle->reset();
 
-  /*
-   * Make the transaction.
-   */
-  tHandle->setMBurstLength(size);
-  tHandle->setMAddr(address);
-  tHandle->setMData(data);
-
+  /* Fill the transaction. */
+  this->transaction->reset();
+  this->transaction->setMBurstLength(size);
+  this->transaction->setMAddr(address);
+  this->transaction->setMData(data);
   if (cmd == READ)
   {
-    tHandle->setMCmd(gs::Generic_MCMD_RD);
-    master_socket.Transact(tHandle);
-    value = *((uint32_t *)data.getData());
-    payload_set_value(p, value);
+    this->transaction->setMCmd(gs::Generic_MCMD_RD);
   }
   else if (cmd == WRITE)
   {
-    tHandle->setMCmd(gs::Generic_MCMD_WR);
-    master_socket.Transact(tHandle);
-  }
-  else
-  {
-    sc_core::sc_stop();
+    this->transaction->setMCmd(gs::Generic_MCMD_WR);
   }
 
-  if (tHandle->getSResp() == gs::Generic_SRESP_ERR)
+  /* Ask SystemC to do the transaction. */
+  this->post_a_transaction();
+
+  if (cmd == READ)
+  {
+    value = *((uint32_t *)data.getData());
+    payload_set_value(p, value);
+  }
+
+  if (this->transaction->getSResp() == gs::Generic_SRESP_ERR)
   {
     payload_set_response_status(p, ADDRESS_ERROR_RESPONSE);
   }
@@ -189,6 +207,206 @@ int SimpleCPU::memory_get_direct_mem_ptr(Payload *p, DMIData *d)
   {
     return 0;
   }
+}
+
+void SimpleCPU::init_io()
+{
+  transaction_pending = false;
+  pthread_mutex_init(&io_done_mtx, NULL);
+  pthread_cond_init(&io_done_cond, NULL);
+
+  SC_METHOD(do_io);
+  sensitive << io_evt;
+  dont_initialize();
+
+  SC_METHOD(dummy);
+  sensitive << dummy_evt;
+  dont_initialize();
+}
+
+void SimpleCPU::destroy_io()
+{
+  pthread_mutex_destroy(&io_done_mtx);
+  pthread_cond_destroy(&io_done_cond);
+}
+
+void SimpleCPU::do_io()
+{
+  /* Do all the IO for the CPU in the SystemC thread. */
+  if (this->transaction_pending)
+  {
+    /*
+     * At this time SystemC thread has the io_done_mtx mutex. Just call
+     * b_transport with the pending transaction.
+     */
+    this->transaction_pending = false;
+    master_socket.Transact(this->transaction);
+    this->finish_io();
+  }
+
+  if (this->systemc_has_finished)
+  {
+    /* Notify quantum_notify() as SystemC has finished. */
+    quantum_evt.notify();
+  }
+  else
+  {
+    /*
+     * SystemC won't really sleep here. But it was woken up for nothing by
+     * post_a_transaction.
+     */
+    systemc_sleep();
+  }
+}
+
+void SimpleCPU::finish_io()
+{
+  pthread_mutex_lock(&io_done_mtx);
+  this->io_completed = true;
+  pthread_mutex_unlock(&this->io_done_mtx);
+  pthread_cond_signal(&io_done_cond);
+}
+
+void SimpleCPU::wait_for_io_completion()
+{
+  pthread_mutex_lock(&io_done_mtx);
+  while (!this->io_completed)
+  {
+    pthread_cond_wait(&io_done_cond, &io_done_mtx);
+  }
+  pthread_mutex_unlock(&io_done_mtx);
+}
+
+void SimpleCPU::post_a_transaction()
+{
+  /*
+   * As SystemC is not thread safe at all, only SystemC can access SystemC code.
+   * The transaction might come from an other thread so a post mechanism is
+   * implemented to ensure that only SystemC call b_transport for memory access.
+   */
+  this->io_completed = false;
+  this->transaction_pending = true;
+  /* Notify the event ASAP. */
+  io_evt.notify();
+  this->wake_up_systemc();
+  this->wait_for_io_completion();
+}
+
+
+void SimpleCPU::dummy()
+{
+  /* dummy does nothing.. */
+}
+
+void SimpleCPU::init_systemc_sleep()
+{
+  systemc_running = 1;
+  pthread_mutex_init(&sc_sleep_mtx, NULL);
+  pthread_cond_init(&sc_sleep_cond, NULL);
+}
+
+void SimpleCPU::wake_up_systemc()
+{
+  /* Wake up SystemC for IO or at the end of the CPU quantum. */
+  pthread_mutex_lock(&sc_sleep_mtx);
+  systemc_running++;
+  pthread_mutex_unlock(&sc_sleep_mtx);
+  pthread_cond_signal(&sc_sleep_cond);
+}
+
+void SimpleCPU::systemc_sleep()
+{
+  /* SystemC is sleeping here until somebody calls wake_up_systemc. */
+  pthread_mutex_lock(&sc_sleep_mtx);
+  systemc_running--;
+  while (systemc_running <= 0)
+  {
+    pthread_cond_wait(&sc_sleep_cond, &sc_sleep_mtx);
+  }
+  pthread_mutex_unlock(&sc_sleep_mtx);
+  /* Notify a dummy event just to not increase time for async events. */
+  dummy_evt.notify();
+}
+
+void SimpleCPU::destroy_systemc_sleep()
+{
+  pthread_mutex_destroy(&sc_sleep_mtx);
+  pthread_cond_destroy(&sc_sleep_cond);
+}
+
+void SimpleCPU::init_cpu_sleep()
+{
+  cpu_running = 1;
+  pthread_mutex_init(&cpu_sleep_mtx, NULL);
+  pthread_cond_init(&cpu_sleep_cond, NULL);
+}
+
+void SimpleCPU::wake_up_cpu()
+{
+  /* Wake up CPU when SystemC has finished it's quantum. */
+  pthread_mutex_lock(&cpu_sleep_mtx);
+  cpu_running++;
+  pthread_mutex_unlock(&cpu_sleep_mtx);
+  pthread_cond_signal(&cpu_sleep_cond);
+}
+
+void SimpleCPU::cpu_sleep()
+{
+  /* CPU is sleeping here until SystemC calls wake_up_cpu. */
+  pthread_mutex_lock(&cpu_sleep_mtx);
+  cpu_running--;
+  while (cpu_running <= 0)
+  {
+    pthread_cond_wait(&cpu_sleep_cond, &cpu_sleep_mtx);
+  }
+  pthread_mutex_unlock(&cpu_sleep_mtx);
+}
+
+void SimpleCPU::destroy_cpu_sleep()
+{
+  pthread_mutex_destroy(&cpu_sleep_mtx);
+  pthread_cond_destroy(&cpu_sleep_cond);
+}
+
+void SimpleCPU::quantum_notify()
+{
+  /* Wait for the CPU to be initialised. */
+  while (!this->cpu_init);
+
+  /*
+   * SystemC is going to sleep. CPU thread wakes up SystemC if it posts an IO
+   * or finishes it's quantum.
+   */
+  systemc_has_finished = true;
+  systemc_sleep();
+
+  if (!cpu_has_finished)
+  {
+    return;
+  }
+
+  cpu_has_finished = false;
+  systemc_has_finished = false;
+
+  /* Notify for the next quantum. */
+  quantum_evt.notify(quantum, sc_core::SC_NS);
+  /* Release CPU. */
+  wake_up_cpu();
+}
+
+void SimpleCPU::end_of_quantum()
+{
+  /* First time called at zero for initialisation. */
+  if (!cpu_init)
+  {
+    cpu_init = true;
+    return;
+  }
+
+  /* The CPU has finished it's quantum. It just needs to wait for SystemC. */
+  cpu_has_finished = true;
+  wake_up_systemc();
+  cpu_sleep();
 }
 
 void SimpleCPU::irq_b_transport(unsigned int port, irqPayload& payload,

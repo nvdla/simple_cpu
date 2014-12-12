@@ -53,6 +53,7 @@ static void get_param_list(void *handler, char **list[], size_t *size);
 static uint64_t get_uint_param(void *handler, const char *name);
 static int64_t get_int_param(void *handler, const char *name);
 static void get_string_param(void *handler, const char *name, char **param);
+static void signal_end_of_quantum(void *handler);
 
 std::vector<std::string> TLM2CSCBridge::libraryNames;
 std::vector<int> TLM2CSCBridge::libraryOccurence;
@@ -68,6 +69,7 @@ TLM2CSCBridge::TLM2CSCBridge(sc_core::sc_module_name name):
   this->environment.get_int_param = get_int_param;
   this->environment.get_param_list = get_param_list;
   this->environment.get_string_param = get_string_param;
+  this->environment.end_of_quantum = signal_end_of_quantum;
   this->environment.handler = this;
 
   SC_METHOD(notification);
@@ -169,6 +171,12 @@ void get_string_param(void *handler, const char *name, char **param)
     Api->getPar(name)->getValue(value);
     *param = strdup(value.c_str());
   }
+}
+
+void signal_end_of_quantum(void *handler)
+{
+  TLM2CSCBridge *_this = (TLM2CSCBridge *)handler;
+  _this->end_of_quantum();
 }
 
 void TLM2CSCBridge::loadLibrary()

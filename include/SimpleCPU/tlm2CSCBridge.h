@@ -59,6 +59,7 @@ class TLM2CSCBridge:
   TLM2CSCBridge(sc_core::sc_module_name name);
   ~TLM2CSCBridge();
   void addNotification(uint64_t time_ns);
+  virtual void end_of_quantum() = 0;
 
   protected:
   Socket *(*tlm2c_socket_get_by_name)(const char *name);
