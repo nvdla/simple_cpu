@@ -79,6 +79,10 @@ SimpleCPU::SimpleCPU(sc_core::sc_module_name name):
   dont_initialize();
   quantum_evt.notify(quantum, sc_core::SC_NS);
 
+  SC_METHOD(stop);
+  sensitive << stop_evt;
+  dont_initialize();
+
   this->cpu_has_finished = false;
   this->systemc_has_finished = false;
   this->cpu_init = false;
@@ -407,6 +411,17 @@ void SimpleCPU::end_of_quantum()
   cpu_has_finished = true;
   wake_up_systemc();
   cpu_sleep();
+}
+
+void SimpleCPU::stop_request()
+{
+  stop_evt.notify();
+  wake_up_systemc();
+}
+
+void SimpleCPU::stop()
+{
+  sc_core::sc_stop();
 }
 
 void SimpleCPU::irq_b_transport(unsigned int port, irqPayload& payload,

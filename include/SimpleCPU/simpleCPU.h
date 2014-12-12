@@ -127,5 +127,10 @@ class SimpleCPU:
   /* dummy event. */
   sc_event dummy_evt;
   void dummy();
+
+  /* stop mechanism. */
+  void stop_request();
+  void stop();
+  thread_safe_event stop_evt;
 };
 

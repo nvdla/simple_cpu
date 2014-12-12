@@ -116,11 +116,6 @@ uint64_t get_time_ns(void *handler)
   return sc_core::sc_time_stamp().value() / 1000;
 }
 
-void request_stop(void *handler)
-{
-  sc_core::sc_stop();
-}
-
 void get_param_list(void *handler, char **list[], size_t *size)
 {
   gs::cnf::cnf_api *Api = gs::cnf::GCnf_Api::getApiInstance(NULL);
@@ -177,6 +172,12 @@ void signal_end_of_quantum(void *handler)
 {
   TLM2CSCBridge *_this = (TLM2CSCBridge *)handler;
   _this->end_of_quantum();
+}
+
+void request_stop(void *handler)
+{
+  TLM2CSCBridge *_this = (TLM2CSCBridge *)handler;
+  _this->stop_request();
 }
 
 void TLM2CSCBridge::loadLibrary()
