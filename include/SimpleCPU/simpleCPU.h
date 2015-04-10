@@ -40,6 +40,7 @@
  *
  */
 
+#include <pthread.h>
 #include <systemc.h>
 #include "tlm2CSCBridge.h"
 #include "SimpleCPU/thread_safe_event.h"
