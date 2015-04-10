@@ -79,11 +79,17 @@ INCLUDE_DIRECTORIES(${INCLUDE_DIRS})
 
 set(CMAKE_CXX_FLAGS "-Wall -Werror -DSC_INCLUDE_DYNAMIC_PROCESSES")
 
-add_library(simplecpu SHARED
-  src/simpleCPU.cpp
-  src/tlm2CSCBridge.cpp
-  src/thread_safe_event.cpp
-  )
+if(MINGW)
+    add_library(simplecpu STATIC src/simpleCPU.cpp
+                                 src/tlm2CSCBridge.cpp
+                                 src/thread_safe_event.cpp)
+else()
+    add_library(simplecpu SHARED src/simpleCPU.cpp
+                                 src/tlm2CSCBridge.cpp
+                                 src/thread_safe_event.cpp)
+endif()
+
+target_link_libraries(simplecpu pthread)
 
 # Installation paths
 INSTALL(DIRECTORY include/SimpleCPU
