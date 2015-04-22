@@ -41,5 +41,5 @@
 ADD_EXECUTABLE(SimpleCPU_testbench
                SimpleCPU_testbench.cpp
                )
-TARGET_LINK_LIBRARIES(SimpleCPU_testbench simplecpu dl tlm2c systemc greenreg)
+TARGET_LINK_LIBRARIES(SimpleCPU_testbench simplecpu ${SystemC_LIBRARIES})
 ADD_TEST(NAME SimpleCPU COMMAND ./SimpleCPU_testbench)

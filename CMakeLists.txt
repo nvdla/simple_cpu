@@ -89,7 +89,14 @@ else()
                                  src/thread_safe_event.cpp)
 endif()
 
-target_link_libraries(simplecpu pthread)
+set(SIMPLECPU_LINK_LIBRARIES pthread
+                             tlm2c)
+
+if(NOT MINGW)
+    list(APPEND SIMPLECPU_LINK_LIBRARIES dl)
+endif()
+
+target_link_libraries(simplecpu ${SIMPLECPU_LINK_LIBRARIES})
 
 # Installation paths
 INSTALL(DIRECTORY include/SimpleCPU
