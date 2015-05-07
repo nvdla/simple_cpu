@@ -288,10 +288,8 @@ void SimpleCPU::post_a_transaction()
    * The transaction might come from an other thread so a post mechanism is
    * implemented to ensure that only SystemC call b_transport for memory access.
    */
-  pthread_mutex_lock(&sc_sleep_mtx);
   this->io_completed = false;
   this->transaction_pending = true;
-  pthread_mutex_unlock(&sc_sleep_mtx);
   /* Notify the event ASAP. */
   io_evt.notify();
   this->wake_up_systemc();
@@ -324,16 +322,6 @@ void SimpleCPU::systemc_sleep()
 {
   /* SystemC is sleeping here until somebody calls wake_up_systemc. */
   pthread_mutex_lock(&sc_sleep_mtx);
-  /*
-   * Sometimes we have already some IO pending (eg: when we don't have events
-   * during a quantum) but they will be triggered after the quantum_notify
-   * function. So just don't sleep in this case.
-   */
-  if (this->transaction_pending)
-  {
-    return;
-  }
-
   systemc_running--;
   while (systemc_running <= 0)
   {
