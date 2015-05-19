@@ -89,6 +89,7 @@ class SimpleCPU:
 
   // Extra parameters
   gs::gs_param<uint64_t> GDBPort;
+  gs::gs_param<std::string> extraArguments;
 
   /* Transaction posting mechanism. */
   transactionHandle transaction;      /*<! Transaction to be posted. */

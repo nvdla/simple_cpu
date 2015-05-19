@@ -64,6 +64,7 @@ SimpleCPU::SimpleCPU(sc_core::sc_module_name name):
   rootfs("rootfs", ""),
   kernel_cmd("kernel_cmd", ""),
   GDBPort("gdb_port", (uint64_t)0),
+  extraArguments("extra_arguments", ""),
   quantum("quantum", 100000000)
 {
   master_socket.out_port(*this);
