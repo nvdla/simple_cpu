@@ -87,6 +87,9 @@ class SimpleCPU:
   gs::gs_param<std::string> rootfs;
   gs::gs_param<std::string> kernel_cmd;
 
+  // Extra parameters
+  gs::gs_param<uint64_t> GDBPort;
+
   /* Transaction posting mechanism. */
   transactionHandle transaction;      /*<! Transaction to be posted. */
   bool transaction_pending;           /*<! CPU is waiting SystemC for a txn. */
