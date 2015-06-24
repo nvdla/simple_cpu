@@ -129,6 +129,14 @@ class SimpleCPU:
   pthread_mutex_t cpu_sleep_mtx;
   pthread_cond_t cpu_sleep_cond;
 
+  // DMI
+  void memory_invalidate_direct_mem_ptr(unsigned int index,
+                                        sc_dt::uint64 start,
+                                        sc_dt::uint64 end);
+  bool DMIInvalidatePending;
+  uint64_t DMIInvalidateStart;
+  uint64_t DMIInvalidateEnd;
+
   /* dummy event. */
   sc_event dummy_evt;
   void dummy();

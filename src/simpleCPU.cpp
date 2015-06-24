@@ -75,6 +75,8 @@ SimpleCPU::SimpleCPU(sc_core::sc_module_name name):
   cnf.use_mandatory_extension<IRQ_LINE_EXTENSION>();
   irq_socket.set_config(cnf);
   irq_socket.register_b_transport(this, &SimpleCPU::irq_b_transport);
+  master_socket.register_invalidate_direct_mem_ptr(this,
+      &SimpleCPU::memory_invalidate_direct_mem_ptr);
 
   SC_METHOD(quantum_notify);
   sensitive << quantum_evt;
@@ -88,6 +90,7 @@ SimpleCPU::SimpleCPU(sc_core::sc_module_name name):
   this->cpu_has_finished = false;
   this->systemc_has_finished = false;
   this->cpu_init = false;
+  this->DMIInvalidatePending = false;
 
   init_io();
   init_systemc_sleep();
@@ -215,6 +218,15 @@ int SimpleCPU::memory_get_direct_mem_ptr(Payload *p, DMIData *d)
   }
 }
 
+void SimpleCPU::memory_invalidate_direct_mem_ptr(unsigned int index,
+                                                 sc_dt::uint64 start,
+                                                 sc_dt::uint64 end)
+{
+    this->DMIInvalidatePending = true;
+    this->DMIInvalidateStart = start;
+    this->DMIInvalidateEnd = end;
+}
+
 void SimpleCPU::init_io()
 {
   transaction_pending = false;
@@ -267,6 +279,12 @@ void SimpleCPU::do_io()
 
 void SimpleCPU::finish_io()
 {
+    if(this->DMIInvalidatePending) {
+        tlm2c_memory_invalidate_direct_mem_ptr(this->targetSocket,
+                                             this->DMIInvalidateStart,
+                                             this->DMIInvalidateEnd);
+        this->DMIInvalidatePending = false;
+    }
   pthread_mutex_lock(&io_done_mtx);
   this->io_completed = true;
   pthread_mutex_unlock(&this->io_done_mtx);
@@ -427,7 +445,7 @@ void SimpleCPU::stop()
 }
 
 void SimpleCPU::irq_b_transport(unsigned int port, irqPayload& payload,
-			                         sc_core::sc_time& time)
+                                sc_core::sc_time& time)
 {
   IRQ_ext_data *data = (IRQ_ext_data *)(payload.get_data_ptr());
 
