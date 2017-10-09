@@ -233,9 +233,7 @@ void SimpleCPU::init_io()
   pthread_mutex_init(&io_done_mtx, NULL);
   pthread_cond_init(&io_done_cond, NULL);
 
-  SC_METHOD(do_io);
-  sensitive << io_evt;
-  dont_initialize();
+  SC_THREAD(do_io);
 
   SC_METHOD(dummy);
   sensitive << dummy_evt;
@@ -250,30 +248,34 @@ void SimpleCPU::destroy_io()
 
 void SimpleCPU::do_io()
 {
-  /* Do all the IO for the CPU in the SystemC thread. */
-  if (this->transaction_pending)
+  while (true)
   {
-    /*
-     * At this time SystemC thread has the io_done_mtx mutex. Just call
-     * b_transport with the pending transaction.
-     */
-    this->transaction_pending = false;
-    master_socket.Transact(this->transaction);
-    this->finish_io();
-  }
+    wait(io_evt.default_event());
+    /* Do all the IO for the CPU in the SystemC thread. */
+    if (this->transaction_pending)
+    {
+      /*
+       * At this time SystemC thread has the io_done_mtx mutex. Just call
+       * b_transport with the pending transaction.
+       */
+      this->transaction_pending = false;
+      master_socket.Transact(this->transaction);
+      this->finish_io();
+    }
 
-  if (this->systemc_has_finished)
-  {
-    /* Notify quantum_notify() as SystemC has finished. */
-    quantum_evt.notify();
-  }
-  else
-  {
-    /*
-     * SystemC won't really sleep here. But it was woken up for nothing by
-     * post_a_transaction.
-     */
-    systemc_sleep();
+    if (this->systemc_has_finished)
+    {
+      /* Notify quantum_notify() as SystemC has finished. */
+      quantum_evt.notify();
+    }
+    else
+    {
+      /*
+       * SystemC won't really sleep here. But it was woken up for nothing by
+       * post_a_transaction.
+       */
+      systemc_sleep();
+    }
   }
 }
 
