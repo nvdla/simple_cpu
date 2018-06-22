@@ -69,6 +69,9 @@ class SimpleCPU:
 
   void memory_bt(Payload *p);
   int memory_get_direct_mem_ptr(Payload *p, DMIData *d);
+
+  void set_dmi_mutex(pthread_mutex_t *mtx);
+  void set_dmi_base_addr(uint64_t addr);
   private:
   /*
    * Internal tlm2c socket.
@@ -145,5 +148,11 @@ class SimpleCPU:
   void stop_request();
   void stop();
   thread_safe_event stop_evt;
+
+  /* dmi mode */
+  pthread_mutex_t *dmi_mtx;
+  bool is_dmi;
+  uint64_t dmi_base_addr;
+  uint64_t *ptr;
 };
 

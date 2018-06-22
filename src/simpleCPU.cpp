@@ -65,7 +65,10 @@ SimpleCPU::SimpleCPU(sc_core::sc_module_name name):
   kernel_cmd("kernel_cmd", ""),
   GDBPort("gdb_port", (uint64_t)0),
   extraArguments("extra_arguments", ""),
-  quantum("quantum", 100000000)
+  quantum("quantum", 100000000),
+  is_dmi(false),
+  dmi_base_addr(0),
+  ptr(NULL)
 {
   master_socket.out_port(*this);
   /*
@@ -102,6 +105,18 @@ SimpleCPU::~SimpleCPU()
   destroy_io();
   destroy_systemc_sleep();
   destroy_cpu_sleep();
+}
+
+void SimpleCPU::set_dmi_mutex(pthread_mutex_t *mtx)
+{
+  dmi_mtx = mtx;
+  is_dmi = true;
+}
+
+void SimpleCPU::set_dmi_base_addr(uint64_t addr)
+{
+  dmi_base_addr = addr;
+  std::cout << "RAM base address: 0x" << std::hex << addr << endl;
 }
 
 void SimpleCPU::additional_init()
@@ -180,22 +195,57 @@ void SimpleCPU::memory_bt(Payload *payload)
     this->transaction->setMCmd(gs::Generic_MCMD_WR);
   }
 
-  /* Ask SystemC to do the transaction. */
-  this->post_a_transaction();
+  if (is_dmi && (address > dmi_base_addr))
+  {
+    if (ptr == NULL)
+    {
+      DMIData dmi;
+      memory_get_direct_mem_ptr(payload, &dmi);
+      ptr = (uint64_t *)(dmi.pointer);
+    }
 
-  if (cmd == READ)
-  {
-    value = *((uint32_t *)data.getData());
-    payload_set_value(p, value);
-  }
+    pthread_mutex_lock(dmi_mtx);
 
-  if (this->transaction->getSResp() == gs::Generic_SRESP_ERR)
-  {
-    payload_set_response_status(p, ADDRESS_ERROR_RESPONSE);
-  }
-  else
-  {
+    uint64_t offset = address - dmi_base_addr;
+    switch (cmd)
+    {
+        case READ:
+          memcpy((uint8_t *)&value, &(((uint8_t *)ptr)[offset]), size);
+          break;
+        case WRITE:
+          memcpy(&(((uint8_t *)ptr)[offset]), (uint8_t *)&value, size);
+          break;
+        default:
+          std::cout << "error invalid command type" << std::endl;
+          break;
+    }
+
+    pthread_mutex_unlock(dmi_mtx);
+
+    if (cmd == READ)
+    {
+      payload_set_value(p, value);
+    }
+
     payload_set_response_status(p, OK_RESPONSE);
+  } else {
+    /* Ask SystemC to do the transaction. */
+    this->post_a_transaction();
+
+    if (cmd == READ)
+    {
+      value = *((uint32_t *)data.getData());
+      payload_set_value(p, value);
+    }
+
+    if (this->transaction->getSResp() == gs::Generic_SRESP_ERR)
+    {
+      payload_set_response_status(p, ADDRESS_ERROR_RESPONSE);
+    }
+    else
+    {
+      payload_set_response_status(p, OK_RESPONSE);
+    }
   }
 }
 
