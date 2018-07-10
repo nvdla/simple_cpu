@@ -42,6 +42,9 @@
 
 #include "SimpleCPU/simpleCPU.h"
 #include "SimpleCPU/IRQ.h"
+#if DEBUG_LOG
+static int const verb = SC_HIGH;
+#endif
 
 static void _memory_bt(void *handle, Payload *p)
 {
@@ -67,6 +70,7 @@ SimpleCPU::SimpleCPU(sc_core::sc_module_name name):
   extraArguments("extra_arguments", ""),
   quantum("quantum", 100000000),
   is_dmi(false),
+  is_dmi_fpga(false),
   dmi_base_addr(0),
   ptr(NULL)
 {
@@ -107,10 +111,24 @@ SimpleCPU::~SimpleCPU()
   destroy_cpu_sleep();
 }
 
+void SimpleCPU::set_dmi_mutex(pthread_mutex_t *mtx, bool is_fpga)
+{
+  if(is_fpga)
+      set_dmi_mutex_fpga(mtx);
+  else
+      set_dmi_mutex(mtx);
+}
+
 void SimpleCPU::set_dmi_mutex(pthread_mutex_t *mtx)
 {
   dmi_mtx = mtx;
   is_dmi = true;
+}
+
+void SimpleCPU::set_dmi_mutex_fpga(pthread_mutex_t *mtx) //Set the lock pointer and set the is_dmi_fpga to be true
+{
+  dmi_mtx = mtx;
+  is_dmi_fpga = true;
 }
 
 void SimpleCPU::set_dmi_base_addr(uint64_t addr)
@@ -195,8 +213,40 @@ void SimpleCPU::memory_bt(Payload *payload)
     this->transaction->setMCmd(gs::Generic_MCMD_WR);
   }
 
-  if (is_dmi && (address > dmi_base_addr))
+  if (is_dmi_fpga && (address > dmi_base_addr)) 
   {
+#if AWS_FPGA_PRESENT
+        // Issue request
+    uint64_t addr_fpga = address;
+    if (cmd == WRITE) {
+      if (0 != data_write(addr_fpga, reinterpret_cast<uint8_t *>(&value), static_cast<int>(size))) {
+        SC_REPORT_ERROR(name(), "ERROR on data write!\n");
+      } else {
+#if DEBUG_LOG
+        std::ostringstream oss;
+        oss << "CPU: iswrite=1 addr=0x" << std::hex << addr_fpga << std::dec << " len=" << size << " data=0x " << std::hex << *(reinterpret_cast<uint32_t *>(&value)) << std::endl;
+        SC_REPORT_INFO_VERB(name(), oss.str().c_str(), verb);
+#endif
+      }
+    } else {
+      if (0 != data_read(addr_fpga, reinterpret_cast<uint8_t *>(&value),static_cast<int>(size))) {
+        SC_REPORT_ERROR(name(), "ERROR on data read!\n");
+      } else {
+#if DEBUG_LOG
+        std::ostringstream oss;
+        oss << "CPU: iswrite=0 addr=0x" << std::hex << addr_fpga << std::dec << " len=" << size << " data=0x " << std::hex << *(reinterpret_cast<uint32_t *>(&value)) << std::endl;
+        SC_REPORT_INFO_VERB(name(), oss.str().c_str(), verb);
+#endif
+      }
+    }
+    if (cmd == READ)
+    {
+      payload_set_value(p, value);
+    }
+
+    payload_set_response_status(p, OK_RESPONSE);
+#endif
+  } else if (is_dmi && (address > dmi_base_addr)) {
     if (ptr == NULL)
     {
       DMIData dmi;
@@ -507,3 +557,64 @@ void SimpleCPU::irq_b_transport(unsigned int port, irqPayload& payload,
   payload_set_command(p, WRITE);
   b_transport(this->initiatorSocket, (Payload *)p);
 }
+
+#if AWS_FPGA_PRESENT
+
+/* write data to FPGA RAM */
+bool SimpleCPU::data_write(uint64_t addr, uint8_t *p_data, int len)
+{
+    bool ret  = true;
+    int index = 0;
+    bool poke_ret = false;
+    bool peek_ret = false;
+
+    while (len >= 4)
+    {
+        poke_ret = fpga_pci_poke(pci_bar_handle, addr, *(reinterpret_cast<uint32_t *>(&(p_data[index]))));
+        ret   = ret & poke_ret;
+        len   = len - 4;
+        index = index + 4;
+    }
+
+    if (len > 0)
+    {
+        uint32_t temp_mem = 0;
+        peek_ret = fpga_pci_peek(pci_bar_handle, addr, &temp_mem);
+        ret   = ret & peek_ret;
+
+        memcpy(reinterpret_cast<uint8_t *>(&temp_mem), reinterpret_cast<uint8_t *>(&(p_data[index])), len);
+        poke_ret = fpga_pci_poke(pci_bar_handle, addr, temp_mem);
+        ret   = ret & poke_ret;
+    }
+
+    return ret;
+}
+
+/* read data from FPGA RAM */
+bool SimpleCPU::data_read(uint64_t addr, uint8_t *p_data, int len)
+{
+    bool ret  = true;
+    int index = 0;
+    bool peek_ret = false;
+
+    while (len > 0)
+    {
+        uint32_t temp_mem = 0;
+        peek_ret = fpga_pci_peek(pci_bar_handle, addr, reinterpret_cast<uint32_t *>(&temp_mem));
+
+        memcpy(reinterpret_cast<uint8_t *>(&(p_data[index])), reinterpret_cast<uint8_t *>(&temp_mem), len);
+        ret   = ret & peek_ret;
+        len   = len - 4;
+        index = index + 4;
+    }
+
+    return ret;
+}
+
+/* Get the PCI handle, which make the SimpleCPU read and write the FPGA RAM directly */
+bool SimpleCPU::set_pci_bar_handle(pci_bar_handle_t pci_bar_handle_in)
+{
+  pci_bar_handle = pci_bar_handle_in;
+  return true;
+}
+#endif
