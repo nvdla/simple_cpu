@@ -50,6 +50,12 @@
 #include "gsgpsocket/transport/GSGPSlaveSocket.h"
 #include "gsgpsocket/transport/GSGPconfig.h"
 #include "greensignalsocket/green_signal.h"
+#if AWS_FPGA_PRESENT
+#include "fpga_pci.h"
+#endif
+#ifndef SC_INCLUDE_DYNAMIC_PROCESSES
+#define SC_INCLUDE_DYNAMIC_PROCESSES
+#endif
 
 class SimpleCPU:
   public TLM2CSCBridge,
@@ -69,9 +75,13 @@ class SimpleCPU:
 
   void memory_bt(Payload *p);
   int memory_get_direct_mem_ptr(Payload *p, DMIData *d);
-
-  void set_dmi_mutex(pthread_mutex_t *mtx);
+  void set_dmi_mutex(pthread_mutex_t *mtx, bool is_fpga);//wrapper for cmod and fpga
+  void set_dmi_mutex(pthread_mutex_t *mtx);//cmod function
+  void set_dmi_mutex_fpga(pthread_mutex_t *mtx);//fpga function
   void set_dmi_base_addr(uint64_t addr);
+#if AWS_FPGA_PRESENT
+  bool set_pci_bar_handle(pci_bar_handle_t pci_bar_handle_in);
+#endif
   private:
   /*
    * Internal tlm2c socket.
@@ -136,6 +146,10 @@ class SimpleCPU:
   void memory_invalidate_direct_mem_ptr(unsigned int index,
                                         sc_dt::uint64 start,
                                         sc_dt::uint64 end);
+#if AWS_FPGA_PRESENT
+  bool data_write(uint64_t addr, uint8_t *p_data, int len);
+  bool data_read(uint64_t addr, uint8_t *p_data, int len);
+#endif
   bool DMIInvalidatePending;
   uint64_t DMIInvalidateStart;
   uint64_t DMIInvalidateEnd;
@@ -152,7 +166,11 @@ class SimpleCPU:
   /* dmi mode */
   pthread_mutex_t *dmi_mtx;
   bool is_dmi;
+  bool is_dmi_fpga;
   uint64_t dmi_base_addr;
   uint64_t *ptr;
+#if AWS_FPGA_PRESENT
+  pci_bar_handle_t pci_bar_handle;
+#endif
 };
 
