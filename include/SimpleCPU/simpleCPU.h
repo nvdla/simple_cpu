@@ -57,6 +57,13 @@
 #define SC_INCLUDE_DYNAMIC_PROCESSES
 #endif
 
+#if REGISTER_ACCESS_TRACE
+#include <iomanip>
+#include <iostream>
+#include <fstream>
+#include <time.h>
+#endif
+
 class SimpleCPU:
   public TLM2CSCBridge,
   public gs::payload_event_queue_output_if<gs::gp::master_atom>
@@ -171,6 +178,11 @@ class SimpleCPU:
   uint64_t *ptr;
 #if AWS_FPGA_PRESENT
   pci_bar_handle_t pci_bar_handle;
+#endif
+
+#if REGISTER_ACCESS_TRACE
+  //this ofstream is used for generate perf time analysis report.
+  ofstream  fout;
 #endif
 };
 

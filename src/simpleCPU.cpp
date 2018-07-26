@@ -102,6 +102,11 @@ SimpleCPU::SimpleCPU(sc_core::sc_module_name name):
   init_io();
   init_systemc_sleep();
   init_cpu_sleep();
+
+#if REGISTER_ACCESS_TRACE
+  //Open the performance log when vp starts.
+  fout.open("./performance.log");
+#endif
 }
 
 SimpleCPU::~SimpleCPU()
@@ -287,6 +292,18 @@ void SimpleCPU::memory_bt(Payload *payload)
       value = *((uint32_t *)data.getData());
       payload_set_value(p, value);
     }
+
+#if REGISTER_ACCESS_TRACE
+    if (address<=0xc0000000)
+    {
+        clock_t now_clk;
+        now_clk = clock();
+        if(cmd == READ)
+            fout << "[ "<<setprecision(10)<<((float)now_clk/CLOCKS_PER_SEC) << " s ] " <<"CPU: iswrite=0 Read addr=0x" << std::hex <<address <<"  data=0x"<<std::hex<<value<<std::endl;
+        else
+            fout << "[ "<<setprecision(10)<<((float)now_clk/CLOCKS_PER_SEC) << " s ] " <<"CPU: iswrite=1 Write addr=0x" << std::hex <<address <<"  data=0x"<<std::hex<<value<<std::endl;
+    }
+#endif
 
     if (this->transaction->getSResp() == gs::Generic_SRESP_ERR)
     {
@@ -568,22 +585,28 @@ bool SimpleCPU::data_write(uint64_t addr, uint8_t *p_data, int len)
     bool poke_ret = false;
     bool peek_ret = false;
 
+    if (len > 4 && len%4 != 0)
+        SC_REPORT_ERROR(name(), "ERROR: data_write only support 4 byte alignment read, when len is more than 4!\n");
+
+    //Process the 4 byte alignment data.
     while (len >= 4)
     {
-        poke_ret = fpga_pci_poke(pci_bar_handle, addr, *(reinterpret_cast<uint32_t *>(&(p_data[index]))));
+        poke_ret = fpga_pci_poke(pci_bar_handle, (addr+index), *(reinterpret_cast<uint32_t *>(&(p_data[index]))));
         ret   = ret & poke_ret;
         len   = len - 4;
         index = index + 4;
     }
 
+    //Process the 1, 2, 3 byte data.
     if (len > 0)
     {
         uint32_t temp_mem = 0;
-        peek_ret = fpga_pci_peek(pci_bar_handle, addr, &temp_mem);
+        uint32_t temp_offset = addr & 0x3;
+        peek_ret = fpga_pci_peek(pci_bar_handle, (addr+index)&0xfffffffc, &temp_mem);
         ret   = ret & peek_ret;
 
-        memcpy(reinterpret_cast<uint8_t *>(&temp_mem), reinterpret_cast<uint8_t *>(&(p_data[index])), len);
-        poke_ret = fpga_pci_poke(pci_bar_handle, addr, temp_mem);
+        memcpy((reinterpret_cast<uint8_t *>(&temp_mem)+temp_offset), reinterpret_cast<uint8_t *>(&(p_data[index])), len);
+        poke_ret = fpga_pci_poke(pci_bar_handle, (addr+index)&0xfffffffc, temp_mem);
         ret   = ret & poke_ret;
     }
 
@@ -597,12 +620,15 @@ bool SimpleCPU::data_read(uint64_t addr, uint8_t *p_data, int len)
     int index = 0;
     bool peek_ret = false;
 
+    if (len > 4 && len%4 != 0)
+        SC_REPORT_ERROR(name(), "ERROR: data_read only support 4 byte alignment read, when len is more than 4!\n");
     while (len > 0)
     {
         uint32_t temp_mem = 0;
-        peek_ret = fpga_pci_peek(pci_bar_handle, addr, reinterpret_cast<uint32_t *>(&temp_mem));
+        uint32_t temp_offset = addr & 0x3;
+        peek_ret = fpga_pci_peek(pci_bar_handle, (addr+index)&0xfffffffc, reinterpret_cast<uint32_t *>(&temp_mem));
 
-        memcpy(reinterpret_cast<uint8_t *>(&(p_data[index])), reinterpret_cast<uint8_t *>(&temp_mem), len);
+        memcpy(reinterpret_cast<uint8_t *>(&(p_data[index])), (reinterpret_cast<uint8_t *>(&temp_mem)+temp_offset), len);
         ret   = ret & peek_ret;
         len   = len - 4;
         index = index + 4;
